@@ -1,4 +1,5 @@
-name: Build MT7921U Driver for 5.4.302
+name: Build MT7921U Driver for 5.4.302 (Custom)
+
 on: [push, workflow_dispatch]
 
 jobs:
@@ -12,29 +13,53 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev crossbuild-essential-arm64 git
-          
+
       - name: Download Linux Kernel 5.4.302 Source
         run: |
           wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.302.tar.xz
           tar -xf linux-5.4.302.tar.xz
-          
+
       - name: Clone Driver Source
         run: |
           git clone https://github.com/jeffersonchou/mt7921u.git
-          
-      - name: Build Driver (Cross Compile)
+
+      - name: Configure Kernel (Enable Wireless Subsystem)
         run: |
           cd linux-5.4.302
-          # 假设默认 ARM64 配置，需开启无线相关配置
+          # 使用 defconfig 作为基础，并启用无线核心配置
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          # 启用 CFG80211 和 MAC80211，这是 MT76 驱动的基础
+          scripts/config --enable CONFIG_CFG80211
+          scripts/config --enable CONFIG_MAC80211
+          scripts/config --enable CONFIG_CFG80211_WEXT
+          # 启用 USB 支持（MT7921U 是 USB 设备）
+          scripts/config --enable CONFIG_USB
+          scripts/config --enable CONFIG_USB_SUPPORT
+          # 更新配置
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+      - name: Prepare Kernel Modules
+        run: |
+          cd linux-5.4.302
+          # modules_prepare 不会生成 Module.symvers，这里手动编译内核以生成它
+          # 注意：完整编译内核耗时较长，在 Actions 中可以使用 -j$(nproc) 加速
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) modules
+          # 生成 Module.symvers 文件（如果上面的命令没有生成，尝试这个）
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
-          
-          cd ../mt7921u
-          # 修改 Makefile 指定内核路径和交叉编译器
-          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+
+      - name: Build Driver (Cross Compile)
+        run: |
+          cd mt7921u
+          # 使用驱动自带的 ARM64 Makefile，并指定内核源码路径
+          # 如果驱动没有 Makefile.arm64，则使用通用 Makefile
+          if [ -f "Makefile.arm64" ]; then
+            make -f Makefile.arm64 KSRC=../linux-5.4.302 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+          else
+            make KSRC=../linux-5.4.302 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+          fi
 
       - name: Upload Driver Artifact
         uses: actions/upload-artifact@v3
         with:
           name: mt7921u-ko
-          path: mt7921u/*.ko
+          path: mt7921u/**/*.ko
