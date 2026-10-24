@@ -30,23 +30,29 @@ jobs:
       - name: Configure Kernel (Enable Wireless Subsystem)
         run: |
           cd linux-5.4.302
+          # 使用默认配置
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          
+          # 强制开启无线驱动编译所必须的底层配置
           ./scripts/config --enable CONFIG_CFG80211
           ./scripts/config --enable CONFIG_MAC80211
           ./scripts/config --enable CONFIG_CFG80211_WEXT
           ./scripts/config --enable CONFIG_USB
           ./scripts/config --enable CONFIG_USB_SUPPORT
+          
+          # 更新依赖关系
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
       - name: Prepare Kernel Modules and Symvers
         run: |
           cd linux-5.4.302
+          # 编译内核模块并生成符号表
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) modules
 
       - name: Build Driver (Cross Compile)
         run: |
           cd mt7921u
-          # 加入 KCFLAGS="-Wno-error" 忽略所有警告导致的错误，强行编译
+          # 只保留这一条！加入 KCFLAGS="-Wno-error" 忽略警告
           make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-Wno-error" modules
 
       - name: Upload Driver Artifact
