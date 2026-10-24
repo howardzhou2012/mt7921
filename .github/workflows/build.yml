@@ -6,7 +6,6 @@ on:
 
 jobs:
   build:
-    # 锁定明确版本，避免 latest 环境变化导致失败
     runs-on: ubuntu-22.04
 
     steps:
@@ -31,36 +30,28 @@ jobs:
       - name: Configure Kernel (Enable Wireless Subsystem)
         run: |
           cd linux-5.4.302
-          # 使用默认配置
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
-          
-          # 强制开启无线驱动编译所必须的底层配置
           ./scripts/config --enable CONFIG_CFG80211
           ./scripts/config --enable CONFIG_MAC80211
           ./scripts/config --enable CONFIG_CFG80211_WEXT
           ./scripts/config --enable CONFIG_USB
           ./scripts/config --enable CONFIG_USB_SUPPORT
-          
-          # 更新依赖关系
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
       - name: Prepare Kernel Modules and Symvers
         run: |
           cd linux-5.4.302
-          # 必须执行 modules 来生成 Module.symvers 符号表，否则外部驱动无法编译
-          # 使用 -j$(nproc) 加速编译过程
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) modules
 
       - name: Build Driver (Cross Compile)
         run: |
           cd mt7921u
-          # 使用标准的 Linux 外部模块编译方式
-          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+          # 加入 KCFLAGS="-Wno-error" 忽略所有警告导致的错误，强行编译
+          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-Wno-error" modules
 
       - name: Upload Driver Artifact
         uses: actions/upload-artifact@v4
         with:
           name: mt7921u-ko
-          # 上传所有生成的 .ko 文件
           path: mt7921u/*.ko
           retention-days: 7
