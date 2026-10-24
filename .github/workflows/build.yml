@@ -26,16 +26,12 @@ jobs:
         run: |
           git clone https://github.com/jeffersonchou/mt7921u.git
 
-      - name: Patch Source Code (Fix Werror)
+      - name: Patch Source Code (Remove all -Werror)
         run: |
           cd mt7921u
-          # 暴力删除所有 Makefile 和 .mk 文件里的 -Werror 标志
-          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sed -i 's/-Werror//g' {} +
-          # 直接修改报错的那个 C 文件，给 if 语句加上大括号
-          sed -i '12125s/if (rNvRwInfo->ucMethod == PARAM_EEPROM_WRITE_NVRAM)/if (rNvRwInfo->ucMethod == PARAM_EEPROM_WRITE_NVRAM) {/g' common/wlan_oid.c
-          # 在对应的结束位置加上右大括号（看代码逻辑，在 DBGLOG 之后）
-          sed -i '12131s/);/); }/g' common/wlan_oid.c
-          echo "Patch applied!"
+          # 暴力清理：查找所有 Makefile 和 .mk 文件，把里面的 -Werror 删得干干净净
+          find . -type f \( -name "Makefile*" -o -name "*.mk" \) -exec sed -i 's/-Werror//g' {} +
+          echo "All -Werror flags removed from Makefiles!"
 
       - name: Configure Kernel (Enable Wireless Subsystem)
         run: |
@@ -56,8 +52,8 @@ jobs:
       - name: Build Driver (Cross Compile)
         run: |
           cd mt7921u
-          # 加上 EXTRA_CFLAGS 双保险
-          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- EXTRA_CFLAGS="-Wno-error" modules
+          # 传递极端宽容的编译参数，忽略所有警告
+          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- EXTRA_CFLAGS="-Wno-error -Wno-unused-function -Wno-declaration-after-statement" modules
 
       - name: Upload Driver Artifact
         uses: actions/upload-artifact@v4
