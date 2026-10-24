@@ -1,0 +1,40 @@
+name: Build MT7921U Driver for 5.4.302
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Driver Code
+        uses: actions/checkout@v3
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev crossbuild-essential-arm64 git
+          
+      - name: Download Linux Kernel 5.4.302 Source
+        run: |
+          wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.302.tar.xz
+          tar -xf linux-5.4.302.tar.xz
+          
+      - name: Clone Driver Source
+        run: |
+          git clone https://github.com/jeffersonchou/mt7921u.git
+          
+      - name: Build Driver (Cross Compile)
+        run: |
+          cd linux-5.4.302
+          # 假设默认 ARM64 配置，需开启无线相关配置
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
+          
+          cd ../mt7921u
+          # 修改 Makefile 指定内核路径和交叉编译器
+          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+
+      - name: Upload Driver Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: mt7921u-ko
+          path: mt7921u/*.ko
