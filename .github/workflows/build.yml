@@ -21,43 +21,47 @@ jobs:
         run: |
           wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.302.tar.xz
           tar -xf linux-5.4.302.tar.xz
-          echo "Kernel source extracted."
 
       - name: Clone Driver Source
         run: |
           git clone https://github.com/jeffersonchou/mt7921u.git
 
+      - name: Patch Source Code (Fix Werror)
+        run: |
+          cd mt7921u
+          # 暴力删除所有 Makefile 和 .mk 文件里的 -Werror 标志
+          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sed -i 's/-Werror//g' {} +
+          # 直接修改报错的那个 C 文件，给 if 语句加上大括号
+          sed -i '12125s/if (rNvRwInfo->ucMethod == PARAM_EEPROM_WRITE_NVRAM)/if (rNvRwInfo->ucMethod == PARAM_EEPROM_WRITE_NVRAM) {/g' common/wlan_oid.c
+          # 在对应的结束位置加上右大括号（看代码逻辑，在 DBGLOG 之后）
+          sed -i '12131s/);/); }/g' common/wlan_oid.c
+          echo "Patch applied!"
+
       - name: Configure Kernel (Enable Wireless Subsystem)
         run: |
           cd linux-5.4.302
-          # 使用默认配置
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
-          
-          # 强制开启无线驱动编译所必须的底层配置
           ./scripts/config --enable CONFIG_CFG80211
           ./scripts/config --enable CONFIG_MAC80211
           ./scripts/config --enable CONFIG_CFG80211_WEXT
           ./scripts/config --enable CONFIG_USB
           ./scripts/config --enable CONFIG_USB_SUPPORT
-          
-          # 更新依赖关系
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
       - name: Prepare Kernel Modules and Symvers
         run: |
           cd linux-5.4.302
-          # 编译内核模块并生成符号表
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) modules
 
       - name: Build Driver (Cross Compile)
         run: |
           cd mt7921u
-          # 只保留这一条！加入 KCFLAGS="-Wno-error" 忽略警告
-          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-Wno-error" modules
+          # 加上 EXTRA_CFLAGS 双保险
+          make -C ../linux-5.4.302 M=$PWD ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- EXTRA_CFLAGS="-Wno-error" modules
 
       - name: Upload Driver Artifact
         uses: actions/upload-artifact@v4
         with:
           name: mt7921u-ko
-          path: mt7921u/*.ko
+          path: mt7921u/**/*.ko
           retention-days: 7
